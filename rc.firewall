@@ -1,0 +1,109 @@
+#! /bin/bash
+
+# Created by: Shantanu Bhusari (1211213728)
+
+# This script is created by taking the reference of given firewall configuration script
+# I've modified initial configuarations and added the setup of rules as per the project requirements
+
+# Initial Configuration (reference from given configuration file)
+##########################################################
+
+# Variable initiation
+
+# Interface connected to intenet
+
+INT_IP="192.168.0.5"
+INT_IP_RANGE="192.168.0.0/24"
+INT_BROADCAST_ADDR="192.168.0.255"
+INT_IFACE="eth0"
+
+# Interface connected to server
+
+LAN_INT_IP="10.0.0.4"
+LAN_INT_IP_RANGE="10.0.0.0/24"
+LAN_INT_BROADCAST_ADDR="10.0.0.255"
+LAN_INT_IFACE="eth1"
+
+# Interface Connected to client
+
+LAN_EXT_IP="172.16.0.5"
+LAN_EXT_IP_RANGE="172.16.0.0/12"
+LAN_EXT_BRADCAST_ADDR="172..31.255.255"
+LAN_EXT_IFACE="eth2"
+
+# Loopback interface
+
+LO_IFACE="lo"
+LO_IP="127.0.0.1"
+
+CLIENT_IP="172.16.0.4"
+SERVER_IP="10.0.0.5"
+
+# iptables configuration (reference from given configuration file)
+###########################################################################
+
+IPTABLES="/sbin/iptables"
+
+# Initial module loading
+
+/sbin/depmod -a
+
+# Flush any existing iptables rules
+
+$IPTABLES -F
+$IPTABLES -F -t nat
+
+# Required iptables modules
+
+/sbin/modprobe ip_tables
+/sbin/modprobe ip_conntrack
+/sbin/modprobe iptable_filter
+/sbin/modprobe iptable_mangle
+/sbin/modprobe iptable_nat
+/sbin/modprobe ipt_LOG
+/sbin/modprobe ipt_limit
+/sbin/modprobe ipt_state
+/sbin/modprobe ipt_MASQUERADE
+
+# enable IPv4 forwarding
+
+echo "1" > /proc/sys/net/ipv4/ip_forward
+
+# Rules Setup (Created from the scratch)
+########################################################################
+
+# Set default policies for INPUT, OUTPUT and FORWARD chain as DROP
+
+$IPTABLES -P INPUT DROP
+$IPTABLES -P OUTPUT DROP
+$IPTABLES -P FORWARD DROP
+
+# Enable NAT
+
+$IPTABLES -t nat -A POSTROUTING -o $INT_IFACE -j MASQUERADE
+
+# Allow all type of traffic initiated from eth1 (Server) to eth0 (Internet)
+
+$IPTABLES -A FORWARD -p tcp -i $LAN_INT_IFACE -o $INT_IFACE -j ACCEPT
+$IPTABLES -A FORWARD -p udp -i $LAN_INT_IFACE -o $INT_IFACE -j ACCEPT
+$IPTABLES -A FORWARD -p tcp -i $INT_IFACE -o $LAN_INT_IFACE -j ACCEPT
+$IPTABLES -A FORWARD -p udp -i $INT_IFACE -o $LAN_INT_IFACE -j ACCEPT
+
+# Only allow client (172.16.0.4/12) to access web page on server (10.0.0.5/24)
+
+$IPTABLES -A FORWARD -p tcp --dport 80 -s $CLIENT_IP -d $SERVER_IP -m state --state NEW,RELATED,ESTABLISHED -j ACCEPT
+
+$IPTABLES -A FORWARD -p tcp --sport 80 -s $SERVER_IP -d $CLIENT_IP -m state --state NEW,RELATED,ESTABLISHED -j ACCEPT
+
+# Allow only server (10.0.0.5) to ping client's ip address (172.16.0.4) and Gateway's ip adress (10.0.0.4)
+
+$IPTABLES -A FORWARD -p ICMP -i $LAN_INT_IFACE -o $LAN_EXT_IFACE -s $SERVER_IP -d $CLIENT_IP --icmp-type 8 -j ACCEPT
+$IPTABLES -A FORWARD -p ICMP -i $LAN_EXT_IFACE -o $LAN_INT_IFACE -s $CLIENT_IP -d $SERVER_IP --icmp-type 0 -j ACCEPT
+$IPTABLES -A FORWARD -p ICMP -i $LAN_EXT_IFACE -o $LAN_INT_IFACE -s $CLIENT_IP -d $SERVER_IP --icmp-type 11 -j ACCEPT
+
+$IPTABLES -A INPUT -p ICMP -i $LAN_INT_IFACE -s $SERVER_IP -d $LAN_INT_IP -j ACCEPT
+$IPTABLES -A OUTPUT -p ICMP -o $LAN_INT_IFACE -s $LAN_INT_IP -d $SERVER_IP -j ACCEPT
+
+
+
+
